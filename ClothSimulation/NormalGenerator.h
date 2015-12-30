@@ -178,6 +178,11 @@ public:
 
 	LRESULT HandleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	{
+        ( void ) hWnd;
+        ( void ) uMsg;
+        ( void ) wParam;
+        ( void ) lParam;
+
 		return 0;
 	}
 };

@@ -122,12 +122,7 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <None Include="MultiTexturePresenter.fx">
-      <FileType>Document</FileType>
-    </None>
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="MultiTexturePresenter.h" />
+    <ClCompile Include="TiledTextures.h" />
     <ClInclude Include="Utility.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

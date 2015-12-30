@@ -103,7 +103,7 @@ void RenderGS(triangle GS_Render_INPUT input[3], inout TriangleStream<PS_Render_
 {
 	PS_Render_INPUT output;
 	for (uint i = 0; i < 3; ++i){
-		output.lPos = input[i].pos;
+		output.lPos = input[i].pos.xyz;
 		output.pos = mul(input[i].pos, mViewProj);
 		output.nor = txNor.SampleLevel(samGeneral,input[i].fInd,0).xyz*2-1.0;
 		output.tex = input[i].fInd;

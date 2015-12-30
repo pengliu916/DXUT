@@ -276,7 +276,7 @@ Sim_2Tex_OUT SimulatePS(PS_Simulate_INPUT input) : SV_Target
 		output.out1.w = currentPos.w;
 		output.out2 = currentVel + 1.0f / 6.0f * dt * ( a0 + 2 * a1 + 2 * a2 + a3 );
 		output.out2.w = 1;
-		output.out1.xyz += SphereConstraint(output.out1, vSpherePos, fSphereRadius);
+		output.out1.xyz += SphereConstraint(output.out1.xyz, vSpherePos, fSphereRadius);
 
 	}else{
 		output.out1 = currentPos;
