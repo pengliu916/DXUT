@@ -14,4 +14,5 @@
 #include "SDKmisc.h"
 #include "DXUTgui.h"
 #include "ScreenGrab.h"
+#include "DDSTextureLoader.h"
 #include "WICTextureLoader.h"

@@ -27,6 +27,7 @@ CDXUTDialog									UI;
 #define IDC_PHASE_SLIDER            4
 #define IDC_SCALE_SATIC             5
 #define IDC_SCALE_SLIDER            6
+#define IDC_SAVE                    7
 
 void CALLBACK OnGUIEvent( UINT nEvent, int nControlID, CDXUTControl* pControl, void* pUserContext );
 
@@ -56,6 +57,8 @@ HRESULT Initial()
     swprintf_s( sz, 100, L"Scale: %0.2f", drosteEffect.m_ConstBuffer.scale );
     UI.AddStatic( IDC_SCALE_SATIC, sz, 0, iY += 26, 170, 23 );
     UI.AddSlider( IDC_SCALE_SLIDER, 0, iY += 26, 170, 23, -600, -100, ( int ) ( drosteEffect.m_ConstBuffer.scale * 100.f ) );
+
+    UI.AddButton( IDC_SAVE, L"Save Image", 0, iY += 26, 170, 23 );
 
     V_RETURN( MultiTexture.Initial() );
     return hr;
@@ -264,6 +267,11 @@ void CALLBACK OnGUIEvent( UINT nEvent, int nControlID, CDXUTControl* pControl, v
     WCHAR sz[100];
     switch ( nControlID )
     {
+    case IDC_SAVE:
+        {
+            drosteEffect.SaveHighResoImgToFile( L"OutputImg.jpg" );
+            break;
+        }
     case IDC_SEPARATE_SLIDER:
         {
             float k = ( float ) ( UI.GetSlider( IDC_SEPARATE_SLIDER )->GetValue() );

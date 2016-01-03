@@ -45,6 +45,7 @@ public:
     ComPtr<ID3D11Buffer>				m_pScreenQuadVB;
 
     // Flag Texture
+    ComPtr<ID3D11ShaderResourceView>	m_pInputTexArraySRV;
     ComPtr<ID3D11ShaderResourceView>	m_pInputTexSRV;
     ComPtr<ID3D11Resource>              m_pInputTex;
 
@@ -52,6 +53,11 @@ public:
     ComPtr<ID3D11Texture2D>				m_pOutputTexture2D;
     ComPtr<ID3D11RenderTargetView>		m_pOutputTextureRTV;
     ComPtr<ID3D11ShaderResourceView>	m_pOutputTextureSRV;
+
+    // For high reso output
+    ComPtr<ID3D11Texture2D>				m_pOutputHighResoTexture2D;
+    ComPtr<ID3D11RenderTargetView>		m_pOutputHighResoTextureRTV;
+    D3D11_VIEWPORT                      m_HighResoRTviewport;
 
     // For Intermediate output
     ComPtr<ID3D11Texture2D>				m_pIntermediateTexture2D;
@@ -89,6 +95,84 @@ public:
         pPSBlob->Release();
         return S_OK;
     }
+    HRESULT CreateTexture2DArraySRV( std::vector<std::wstring>& filenames )
+    {
+        HRESULT hr;
+        //
+        // Load the texture elements individually from file.  These textures
+        // won't be used by the GPU (0 bind flags), they are just used to 
+        // load the image data from file.  We use the STAGING usage so the
+        // CPU can read the resource.
+        //
+        UINT size = filenames.size();
+        std::vector<ComPtr<ID3D11Texture2D>> srcTex( size );
+        auto device = DXUTGetD3D11Device();
+        for ( UINT i = 0; i < size; ++i )
+        {
+            /*V_RETURN( CreateDDSTextureFromFileEx( device, filenames[i].c_str(), 0u, D3D11_USAGE_STAGING, 0, 
+                                                  D3D11_CPU_ACCESS_WRITE | D3D11_CPU_ACCESS_READ, 0, false, 
+                                                  ( ID3D11Resource** ) srcTex[i].ReleaseAndGetAddressOf(), nullptr, nullptr ) );*/
+            V_RETURN( CreateWICTextureFromFileEx( device, nullptr, filenames[i].c_str(), 0u, D3D11_USAGE_STAGING, 0,
+                                                D3D11_CPU_ACCESS_WRITE | D3D11_CPU_ACCESS_READ, 0, false,
+                                                ( ID3D11Resource** ) srcTex[i].ReleaseAndGetAddressOf(), nullptr ) );
+
+        }
+
+        //
+        // Create the texture array.  Each element in the texture 
+        // array has the same format/dimensions.
+        //
+        D3D11_TEXTURE2D_DESC texElementDesc;
+        srcTex[0]->GetDesc( &texElementDesc );
+        D3D11_TEXTURE2D_DESC texArrayDesc;
+        texArrayDesc.Width = texElementDesc.Width;
+        texArrayDesc.Height = texElementDesc.Height;
+        texArrayDesc.MipLevels = texElementDesc.MipLevels;
+        texArrayDesc.ArraySize = size;
+        texArrayDesc.Format = texElementDesc.Format;
+        texArrayDesc.SampleDesc.Count = 1;
+        texArrayDesc.SampleDesc.Quality = 0;
+        texArrayDesc.Usage = D3D11_USAGE_DEFAULT;
+        texArrayDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        texArrayDesc.CPUAccessFlags = 0;
+        texArrayDesc.MiscFlags = 0;
+
+        ComPtr<ID3D11Texture2D> texArray = 0;
+        V_RETURN( device->CreateTexture2D( &texArrayDesc, 0, &texArray ) );
+
+        //
+        // Copy individual texture elements into texture array.
+        //
+        auto context = DXUTGetD3D11DeviceContext();
+
+        // for each texture element...
+        for ( UINT texElement = 0; texElement < size; ++texElement )
+        {
+            // for each mipmap level...
+            for ( UINT mipLevel = 0; mipLevel < texElementDesc.MipLevels; ++mipLevel )
+            {
+                D3D11_MAPPED_SUBRESOURCE mappedTex2D;
+                V_RETURN( context->Map( srcTex[texElement].Get(), mipLevel, D3D11_MAP_READ, 0, &mappedTex2D ) );
+                context->UpdateSubresource( texArray.Get(),
+                                            D3D11CalcSubresource( mipLevel, texElement, texElementDesc.MipLevels ),
+                                            0, mappedTex2D.pData, mappedTex2D.RowPitch, mappedTex2D.DepthPitch );
+                context->Unmap( srcTex[texElement].Get(), mipLevel );
+            }
+        }
+        //
+        // Create a resource view to the texture array.
+        //
+        D3D11_SHADER_RESOURCE_VIEW_DESC viewDesc;
+        viewDesc.Format = texArrayDesc.Format;
+        viewDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
+        viewDesc.Texture2DArray.MostDetailedMip = 0;
+        viewDesc.Texture2DArray.MipLevels = texArrayDesc.MipLevels;
+        viewDesc.Texture2DArray.FirstArraySlice = 0;
+        viewDesc.Texture2DArray.ArraySize = size;
+        V_RETURN( device->CreateShaderResourceView( texArray.Get(), &viewDesc, m_pInputTexArraySRV.ReleaseAndGetAddressOf() ) );
+
+        return S_OK;
+    }
 
     HRESULT CreateResource( ID3D11Device* pd3dDevice )
     {
@@ -116,7 +200,16 @@ public:
         pPSBlob->Release();
 
         // Load input texture
-        V_RETURN( CreateWICTextureFromFile( pd3dDevice, nullptr, L"IMG_5287.png", m_pInputTex.ReleaseAndGetAddressOf(), m_pInputTexSRV.ReleaseAndGetAddressOf() ) );
+        vector<wstring> filenames;
+        filenames.push_back( L"img0.png" );
+        filenames.push_back( L"img1.png" );
+        filenames.push_back( L"img2.png" );
+        filenames.push_back( L"img3.png" );
+        filenames.push_back( L"img4.png" );
+
+        V_RETURN( CreateWICTextureFromFile( pd3dDevice, nullptr, filenames[0].c_str(), m_pInputTex.ReleaseAndGetAddressOf(), m_pInputTexSRV.ReleaseAndGetAddressOf() ) );
+        V_RETURN( CreateTexture2DArraySRV( filenames ) );
+
         ComPtr<ID3D11Texture2D> pTextureInterface;
         m_pInputTex.Get()->QueryInterface<ID3D11Texture2D>( &pTextureInterface );
 
@@ -125,6 +218,34 @@ public:
 
         m_ConstBuffer.inputTexReso = float2( ( float ) desc.Width, ( float ) desc.Height );
         m_ConstBuffer.outputTexReso = float2( ( float ) desc.Width, ( float ) desc.Height );
+
+        //Create rendertaget resource
+        D3D11_TEXTURE2D_DESC	RTtextureDesc = { 0 };
+        RTtextureDesc.Width = desc.Width;
+        RTtextureDesc.Height = desc.Height;
+        RTtextureDesc.MipLevels = 1;
+        RTtextureDesc.ArraySize = 1;
+        RTtextureDesc.Format = DXGI_FORMAT_R16G16B16A16_UNORM;
+        RTtextureDesc.SampleDesc.Count = 1;
+        RTtextureDesc.Usage = D3D11_USAGE_DEFAULT;
+        RTtextureDesc.BindFlags = D3D11_BIND_RENDER_TARGET;
+        RTtextureDesc.CPUAccessFlags = 0;
+        RTtextureDesc.MiscFlags = 0;
+
+        V_RETURN( pd3dDevice->CreateTexture2D( &RTtextureDesc, NULL, m_pOutputHighResoTexture2D.ReleaseAndGetAddressOf() ) );
+
+        D3D11_RENDER_TARGET_VIEW_DESC	RTviewDesc;
+        RTviewDesc.Format = RTtextureDesc.Format;
+        RTviewDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+        RTviewDesc.Texture2D.MipSlice = 0;
+        V_RETURN( pd3dDevice->CreateRenderTargetView( m_pOutputHighResoTexture2D.Get(), &RTviewDesc, m_pOutputHighResoTextureRTV.ReleaseAndGetAddressOf() ) );
+
+        m_HighResoRTviewport.Width = ( float ) desc.Width;
+        m_HighResoRTviewport.Height = ( float ) desc.Height;
+        m_HighResoRTviewport.MinDepth = 0.0f;
+        m_HighResoRTviewport.MaxDepth = 1.0f;
+        m_HighResoRTviewport.TopLeftX = 0;
+        m_HighResoRTviewport.TopLeftY = 0;
 
         D3D11_BUFFER_DESC bd =
         {
@@ -172,6 +293,36 @@ public:
         return hr;
     }
 
+    void SaveHighResoImgToFile( wstring filename )
+    {
+        auto pd3dImmediateContext = DXUTGetD3D11DeviceContext();
+        // Draw to high reso texture
+        float ClearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+        pd3dImmediateContext->OMSetRenderTargets( 1, m_pOutputHighResoTextureRTV.GetAddressOf(), nullptr );
+        pd3dImmediateContext->ClearRenderTargetView( m_pOutputHighResoTextureRTV.Get(), ClearColor );
+        pd3dImmediateContext->UpdateSubresource( m_pConstBuffer.Get(), 0, NULL, &m_ConstBuffer, 0, 0 );
+
+        UINT Stride = 0;
+        UINT Offset = 0;
+        pd3dImmediateContext->IASetVertexBuffers( 0, 1, m_pScreenQuadVB.GetAddressOf(), &Stride, &Offset );
+        pd3dImmediateContext->IASetInputLayout( m_pScreenQuadIL.Get() );
+        pd3dImmediateContext->IASetPrimitiveTopology( D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST );
+        pd3dImmediateContext->VSSetShader( m_pScreenQuadVS.Get(), NULL, 0 );
+        pd3dImmediateContext->GSSetShader( nullptr, NULL, 0 );
+        pd3dImmediateContext->PSSetShader( m_pDrosteEffectPS.Get(), NULL, 0 );
+        pd3dImmediateContext->VSSetConstantBuffers( 0, 1, m_pConstBuffer.GetAddressOf() );
+        pd3dImmediateContext->PSSetSamplers( 0, 1, m_pDrosteEffectSS.GetAddressOf() );
+        pd3dImmediateContext->PSSetShaderResources( 0, 1, m_pInputTexArraySRV.GetAddressOf() );
+        pd3dImmediateContext->PSSetConstantBuffers( 0, 1, m_pConstBuffer.GetAddressOf() );
+        pd3dImmediateContext->RSSetViewports( 1, &m_HighResoRTviewport );
+        pd3dImmediateContext->RSSetState( m_pSolidRS.Get() );
+        pd3dImmediateContext->Draw( 4, 0 );
+
+        // Save to file
+        SaveWICTextureToFile( DXUTGetD3D11DeviceContext(), ( ID3D11Resource* ) m_pOutputHighResoTexture2D.Get(),
+                              GUID_ContainerFormatJpeg, filename.c_str() );
+    }
+
     HRESULT Resize( ID3D11Device* pd3dDevice, int Width, int Height )
     {
         HRESULT hr;
@@ -182,7 +333,7 @@ public:
         RTtextureDesc.Height = Height;
         RTtextureDesc.MipLevels = 1;
         RTtextureDesc.ArraySize = 1;
-        RTtextureDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+        RTtextureDesc.Format = DXGI_FORMAT_R16G16B16A16_UNORM;
         RTtextureDesc.SampleDesc.Count = 1;
         RTtextureDesc.Usage = D3D11_USAGE_DEFAULT;
         RTtextureDesc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
@@ -234,7 +385,7 @@ public:
         pd3dImmediateContext->PSSetShader( m_pDrosteEffectPS.Get(), NULL, 0 );
         pd3dImmediateContext->VSSetConstantBuffers( 0, 1, m_pConstBuffer.GetAddressOf() );
         pd3dImmediateContext->PSSetSamplers( 0, 1, m_pDrosteEffectSS.GetAddressOf() );
-        pd3dImmediateContext->PSSetShaderResources( 0, 1, m_pInputTexSRV.GetAddressOf() );
+        pd3dImmediateContext->PSSetShaderResources( 0, 1, m_pInputTexArraySRV.GetAddressOf() );
         pd3dImmediateContext->PSSetConstantBuffers( 0, 1, m_pConstBuffer.GetAddressOf() );
         pd3dImmediateContext->RSSetViewports( 1, &m_RTviewport );
         pd3dImmediateContext->RSSetState( m_pSolidRS.Get() );
